@@ -16,17 +16,28 @@ namespace SPlugin
     [ApiVersion(1, 21)]
     public class SPlugin : TerrariaPlugin
     {
+        #region Properties
+
         public override Version Version { get { return new Version("1.0"); } }
 
         public override string Name { get { return "SPlugin"; } }
 
         public override string Author { get { return "Switchi"; } }
 
+        #endregion
+
+
+
         private SqliteConnection DB;
 
-
+        // Constructor
         public SPlugin(Main game) : base(game) {}
 
+        /* Initialize
+         * 
+         * Initialize plugin at start
+         * 
+         * */
         public override void Initialize()
         {
             ServerApi.Hooks.NetGetData.Register(this, OnGetData);
@@ -36,6 +47,11 @@ namespace SPlugin
             SetupDB();
         }
 
+        /* Dispose
+         * 
+         * Dispose plugin before shutdown
+         * 
+         * */
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -48,17 +64,22 @@ namespace SPlugin
         }
 
 
-
+        /* SetupDB
+         * 
+         * Initialize database connection
+         * 
+         * */
         private void SetupDB()
         {
-            //connection
+            // We need make path to db file and create connection
             string sql = Path.Combine(TShock.SavePath, "tshock.sqlite");
             DB = new SqliteConnection(string.Format("uri=file://{0},Version=3", sql));
 
-            //creator
+            // Bind sqlite connection with TShock table creator to make life easier
             SqlTableCreator sqlcreator = new SqlTableCreator(DB,
                 (IQueryBuilder)new SqliteQueryCreator());
 
+            // Ensure that our tables in db are exists
             sqlcreator.EnsureTableStructure(new SqlTable("kills_stats",
                 new SqlColumn("user_id", MySqlDbType.Text),
                 new SqlColumn("mob_id", MySqlDbType.Text),
@@ -69,35 +90,42 @@ namespace SPlugin
                 new SqlColumn("tiles", MySqlDbType.Int32)));
         }
 
+        /* OnTileEdit
+         * 
+         * Handle our hook when tile has been modified
+         * 
+         * */
         private void OnTileEdit(object sender, TShockAPI.GetDataHandlers.TileEditEventArgs args)
         {
             try
             {
+                // check if tile has destroyed
                 if (args.Action == GetDataHandlers.EditAction.KillTile)
                 {
-                    int tiles = 1;
+                    int TilesNum = 1;
 
-                    TShockAPI.Utils.Instance.Broadcast("Tile has gone", 255, 0, 0);
                     using (QueryResult dbreader = DB.QueryReader("SELECT * FROM mines_stats WHERE user_id=@0;", args.Player.Name))
                     {
                         if (dbreader.Read())
                         {
-                            tiles += dbreader.Get<int>("tiles");
+                            TilesNum += dbreader.Get<int>("tiles");
                         }
                     }
 
-                    if (tiles == 1)
+                    // determine if use update or insert in database
+                    if (TilesNum == 1)
                     {
-                        DB.Query("INSERT INTO mines_stats (user_id, tiles) VALUES (@0, @1);", args.Player.Name, tiles);
+                        DB.Query("INSERT INTO mines_stats (user_id, tiles) VALUES (@0, @1);", args.Player.Name, TilesNum);
                     }
                     else
                     {
-                        DB.Query("UPDATE mines_stats SET tiles=@0 WHERE user_id=@1;", tiles, args.Player.Name);
+                        DB.Query("UPDATE mines_stats SET tiles=@0 WHERE user_id=@1;", TilesNum, args.Player.Name);
                     }
 
-                    if (tiles % 10 == 0)
+                    // Every 10 tiles destroyed send on chat information about it
+                    if (TilesNum % 10 == 0)
                     {
-                        string message = string.Format("{0} has mined {1} blocks!", args.Player.Name, tiles);
+                        string message = string.Format("{0} has mined {1} blocks!", args.Player.Name, TilesNum);
                         TShockAPI.Utils.Instance.Broadcast(message, 255, 0, 0);
                     }
                 }
@@ -109,62 +137,74 @@ namespace SPlugin
             }
         }
 
+
+        /* OnGetData
+         * 
+         * Hook which provides packet handling
+         * 
+         * */
         private void OnGetData(GetDataEventArgs args)
         {
             switch(args.MsgID)
             {
                 case PacketTypes.NpcStrike:
                     {
-                        using (var data = new MemoryStream(args.Msg.readBuffer, args.Index, args.Length))
+                        // Read data from received packet
+                        using (var PacketDataStream = new MemoryStream(args.Msg.readBuffer, args.Index, args.Length))
                         {
-                            var reader = new BinaryReader(data);
-                            var npcid = reader.ReadInt16();
-                            var dmg = reader.ReadInt16();
-                            var knockback = reader.ReadSingle();
-                            var direction = reader.ReadByte();
-                            var crit = reader.ReadBoolean();
-                            int critmultiply = 1;
-                            if (crit)
-                            {
-                                critmultiply = 2;
-                            }
-                            int actualdmg = (dmg - Main.npc[npcid].defense / 2) * critmultiply;
-                            if (actualdmg < 0)
-                            {
-                                actualdmg = 1;
-                            }
-                            int playerid = args.Msg.whoAmI;
+                            var PacketReader = new BinaryReader(PacketDataStream);
+                            var NpcID = PacketReader.ReadInt16();
+                            var Damage = PacketReader.ReadInt16();
+                            var Knockback = PacketReader.ReadSingle();
+                            var Direction = PacketReader.ReadByte();
+                            var IsCritical = PacketReader.ReadBoolean();
 
-                            NPC monster = Main.npc[npcid];
-                            if (monster != null)
+                            // Calculate damage, CriticalMultiply will miltiply damage by 2 if was critical hit
+                            int CriticalMultiply = (IsCritical) ? 1 : 2;
+
+                            int ActualDamage = (Damage - Main.npc[NpcID].defense / 2) * CriticalMultiply;
+                            if (ActualDamage < 0)
                             {
-                                if (actualdmg >= monster.life && monster.life > 0 && monster.active)
+                                ActualDamage = 1;
+                            }
+                            int PlayerID = args.Msg.whoAmI;
+
+                            // Get monster object by id
+                            NPC Monster = Main.npc[NpcID];
+                            if (Monster != null)
+                            {
+                                // Check if monster will die after damage taken and get information about who is the killer
+                                if (ActualDamage >= Monster.life && Monster.life > 0 && Monster.active)
                                 {
-                                    Player player = Main.player[playerid];
+                                    Player player = Main.player[PlayerID];
                                     if (player != null)
                                     {
-                                        int kills = 1;
+                                        int KillsNum = 1;
 
                                         try
                                         {
-                                            using (QueryResult dbreader = DB.QueryReader("SELECT * FROM kills_stats WHERE user_id=@0 AND mob_id=@1;", player.name, monster.name))
+                                            // Get current monster's type kills count from db
+                                            // Update number of kills if record exists or
+                                            // Insert new record if do not exists
+                                            using (QueryResult dbreader = DB.QueryReader("SELECT * FROM kills_stats WHERE user_id=@0 AND mob_id=@1;", player.name, Monster.name))
                                             {
                                                 if (dbreader.Read())
                                                 {
-                                                    kills += dbreader.Get<int>("kills");
+                                                    KillsNum += dbreader.Get<int>("kills");
                                                 }
                                             }
 
-                                            if (kills == 1)
+                                            if (KillsNum == 1)
                                             {
-                                                DB.Query("INSERT INTO kills_stats (user_id, mob_id, kills) VALUES (@0, @1, @2);", player.name, monster.name, kills);
+                                                DB.Query("INSERT INTO kills_stats (user_id, mob_id, kills) VALUES (@0, @1, @2);", player.name, Monster.name, KillsNum);
                                             }
                                             else
                                             {
-                                                DB.Query("UPDATE kills_stats SET kills=@0 WHERE user_id=@1 AND mob_id=@2;", kills, player.name, monster.name);
+                                                DB.Query("UPDATE kills_stats SET kills=@0 WHERE user_id=@1 AND mob_id=@2;", KillsNum, player.name, Monster.name);
                                             }
 
-                                            string message = string.Format("{0} killed {1} (total: {2})", player.name, monster.name, kills);
+                                            // Send same information about kills on chat
+                                            string message = string.Format("{0} killed {1} (total: {2})", player.name, Monster.name, KillsNum);
                                             TShockAPI.Utils.Instance.Broadcast(message, 255, 0, 0);
                                         }
                                         catch (Exception ex)
@@ -177,9 +217,6 @@ namespace SPlugin
                             }
                         }
                     }
-                    break;
-
-                case PacketTypes.TileKill:
                     break;
 
                 default:
