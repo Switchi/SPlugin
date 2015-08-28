@@ -13,7 +13,7 @@ namespace SPlugin
     [ApiVersion(1, 21)]
     public class SPlugin : TerrariaPlugin
     {
-        #region Properties
+        #region PluginProperties
 
         public override Version Version { get { return new Version("1.0"); } }
 
@@ -67,6 +67,9 @@ namespace SPlugin
         private void OnGameInitialize(EventArgs Args)
         {
             SetupDB();
+
+            SPluginApi Api = new SPluginApi(TShock.RestApi, DB);
+            Api.RegisterRestfulCommands();
         }
 
         /* SetupDB

@@ -264,5 +264,106 @@ namespace SPlugin
                 TShockAPI.Utils.Instance.Broadcast(PlayerName + " died " + DeathsNum + " times!", new Color(255, 0, 0));
             }
         }
+
+        /* GetKills
+         * 
+         * Returns all kills of specific player from db
+         * 
+         * */
+        internal Dictionary<string, int> GetKills(string PlayerName)
+        {
+            var Result = new Dictionary<string, int>();
+            using (var dbreader = QueryReader("SELECT * FROM user_kills_stats WHERE user_id=@0;", PlayerName))
+            {
+                while (dbreader.Read())
+                {
+                    var MobID = dbreader.Get<string>("mob_id");
+                    Result[MobID] = dbreader.Get<int>("kills");
+                }
+            }
+            return Result;
+        }
+
+        /* GetAllKills
+         * 
+         * Returns all kills of each player from db
+         * 
+         * */
+        internal Dictionary<string, Dictionary<string, int>> GetAllKills()
+        {
+            var Result = new Dictionary<string, Dictionary<string, int>>();
+            using (var dbreader = QueryReader("SELECT * FROM user_kills_stats;"))
+            {
+                while (dbreader.Read())
+                {
+                    var UserID = dbreader.Get<string>("user_id");
+                    var MobID = dbreader.Get<string>("mob_id");
+                    var Kills = dbreader.Get<int>("kills");
+
+                    if (!Result.ContainsKey(UserID))
+                    {
+                        Result[UserID] = new Dictionary<string, int>();
+                    }
+                    Result[UserID][MobID] = Kills;
+                }
+            }
+            return Result;
+        }
+
+        /* GetStats
+         * 
+         * Returns stats of specific player from db
+         * 
+         * */
+        internal int[] GetStats(string PlayerName)
+        {
+            int[] Result = null;
+            using (var dbreader = QueryReader("SELECT * FROM user_stats WHERE user_id=@0;", PlayerName))
+            {
+                if (dbreader.Read())
+                {
+                    var TilesDestroyed = dbreader.Get<int>("tiles_destroyed");
+                    var TilesPlaced = dbreader.Get<int>("tiles_placed");
+                    var Deaths = dbreader.Get<int>("deaths");
+
+                    Result = new int[] {
+                            TilesDestroyed,
+                            TilesPlaced,
+                            Deaths
+                    };
+                }
+            }
+            return Result;
+        }
+
+        /* GetAllStats
+         * 
+         * Returns all stats of each player from db
+         * 
+         * */
+        internal Dictionary<string, int[]> GetAllStats()
+        {
+            var Result = new Dictionary<string, int[]>();
+            using (var dbreader = QueryReader("SELECT * FROM user_stats;"))
+            {
+                while (dbreader.Read())
+                {
+                    var UserID = dbreader.Get<string>("user_id");
+                    var TilesDestroyed = dbreader.Get<int>("tiles_destroyed");
+                    var TilesPlaced = dbreader.Get<int>("tiles_placed");
+                    var Deaths = dbreader.Get<int>("deaths");
+
+                    if (!Result.ContainsKey(UserID))
+                    {
+                        Result[UserID] = new int[] {
+                            TilesDestroyed,
+                            TilesPlaced,
+                            Deaths
+                        };
+                    }
+                }
+            }
+            return Result;
+        }
     }
 }
